@@ -1,0 +1,3 @@
+"""
+AstroBot Persona Aggregator specialist.
+"""

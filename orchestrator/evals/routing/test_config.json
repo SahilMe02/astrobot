@@ -1,0 +1,43 @@
+{
+  "criteria": {
+    "rubric_based_tool_use_quality_v1": {
+      "threshold": 0.8,
+      "judge_model_options": {
+        "judge_model": "gemini-2.5-flash",
+        "num_samples": 3
+      },
+      "rubrics": [
+        {
+          "rubric_id": "known_specialists_only",
+          "type": "TOOL_USE_QUALITY",
+          "rubric_content": {
+            "text_property": "Every tool the agent calls is one of call_data_science, call_persona_aggregator, call_project_manager, call_economist or call_scheduler."
+          }
+        }
+      ]
+    },
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.8,
+      "judge_model_options": {
+        "judge_model": "gemini-2.5-flash",
+        "num_samples": 3
+      },
+      "rubrics": [
+        {
+          "rubric_id": "no_internal_payloads",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "The response contains no raw JSON, internal state keys or handoff payloads."
+          }
+        },
+        {
+          "rubric_id": "no_unsupported_numbers",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "Every number in the response is supported by a tool result; nothing is made up."
+          }
+        }
+      ]
+    }
+  }
+}

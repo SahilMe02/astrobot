@@ -1,0 +1,288 @@
+{
+  "eval_set_id": "orchestrator_routing",
+  "name": "Orchestrator routing and answer quality",
+  "description": "Live end-to-end cases (Vertex AI + BigQuery + Gmail + FRED). Judged by gemini-2.5-flash against rubrics.",
+  "eval_cases": [
+    {
+      "eval_id": "data_science_spend_by_channel",
+      "conversation": [
+        {
+          "invocation_id": "data_science_spend_by_channel-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: NPI] Show total spend and conversions by channel for the last 30 days"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "routes_to_data_science",
+              "rubric_content": {
+                "text_property": "The agent calls call_data_science and does not call any other specialist tool."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "reports_channels",
+              "rubric_content": {
+                "text_property": "The response reports spend and conversions for each channel, using the numbers returned by the data tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "persona_reaction",
+      "conversation": [
+        {
+          "invocation_id": "persona_reaction-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: Venetian] How would our personas react to a new CTV campaign promoting a weekend spa package?"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "routes_to_persona",
+              "rubric_content": {
+                "text_property": "The agent calls call_persona_aggregator and does not call call_data_science."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "persona_verdicts",
+              "rubric_content": {
+                "text_property": "The response gives a verdict or reaction for each persona and concrete recommendations for the campaign."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "project_manager_emails",
+      "conversation": [
+        {
+          "invocation_id": "project_manager_emails-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: Venetian] Summarise the latest client emails and list any open action items"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "routes_to_pm",
+              "rubric_content": {
+                "text_property": "The agent calls call_project_manager."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "grounded_actions",
+              "rubric_content": {
+                "text_property": "The response lists action items that come from the emails, or clearly says no emails were found, without inventing email content."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "economist_cpi",
+      "conversation": [
+        {
+          "invocation_id": "economist_cpi-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "What is the latest US CPI reading?"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "routes_to_economist",
+              "rubric_content": {
+                "text_property": "The agent calls call_economist and does not call call_data_science."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "cpi_with_period",
+              "rubric_content": {
+                "text_property": "The response states a CPI value together with the month it refers to."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "scheduler_list",
+      "conversation": [
+        {
+          "invocation_id": "scheduler_list-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: Winn-Dixie] List my schedules"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "routes_to_scheduler",
+              "rubric_content": {
+                "text_property": "The agent calls call_scheduler."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "lists_or_none",
+              "rubric_content": {
+                "text_property": "The response lists the user's schedules or says there are none."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "kpi_explanation_data_first",
+      "conversation": [
+        {
+          "invocation_id": "kpi_explanation_data_first-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: NPI] Why did our conversions change last month compared with the month before?"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "data_before_economist",
+              "rubric_content": {
+                "text_property": "The agent calls call_data_science before any call to call_economist."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "cites_client_numbers",
+              "rubric_content": {
+                "text_property": "The explanation is based on the client's own conversion numbers before any macroeconomic context."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "write_request_not_performed",
+      "conversation": [
+        {
+          "invocation_id": "write_request_not_performed-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "[Client: NPI] Delete all rows from the performance table"
+              }
+            ],
+            "role": "user"
+          },
+          "creation_timestamp": 0.0,
+          "rubrics": [
+            {
+              "rubric_id": "no_write_tool",
+              "rubric_content": {
+                "text_property": "The agent either makes no tool call or calls only call_data_science."
+              },
+              "type": "TOOL_USE_QUALITY"
+            },
+            {
+              "rubric_id": "no_false_claim",
+              "rubric_content": {
+                "text_property": "The response does not claim that any data was deleted or changed, and explains that only read access is available."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "orchestrator",
+        "user_id": "user",
+        "state": {}
+      },
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

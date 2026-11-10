@@ -1,0 +1,138 @@
+{
+  "_comment": "Server-owned client registry (development copy). Production loads the same shape from Firestore. Only clients listed here exist. {project} is replaced with GOOGLE_CLOUD_PROJECT. gmail.query is the server-owned mailbox filter per client; production should use a per-client alias address or Gmail label (e.g. to:venetian@agency.com or label:client-venetian).",
+  "rule_profiles": {
+    "performance": [
+      "Each row is one Date x Channel x Campaign with Cost, Impressions, Clicks, Conversions, Revenue.",
+      "Spend = SUM(Cost). Conversions = SUM(Conversions). Revenue = SUM(Revenue).",
+      "CPA = SAFE_DIVIDE(SUM(Cost), SUM(Conversions)).",
+      "ROAS = SAFE_DIVIDE(SUM(Revenue), SUM(Cost)).",
+      "CTR = SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)). CPC = SAFE_DIVIDE(SUM(Cost), SUM(Clicks)).",
+      "Always aggregate before computing ratios; never average daily ratios.",
+      "Filter dates with the Date column."
+    ],
+    "thelook": [
+      "Revenue = SUM(order_items.sale_price). Never use products.cost or products.retail_price for revenue.",
+      "Order count = COUNT(DISTINCT order_items.order_id). Customer count = COUNT(DISTINCT order_items.user_id).",
+      "Joins: order_items.product_id = products.id; order_items.order_id = orders.order_id; order_items.user_id = users.id."
+    ]
+  },
+  "demo": {
+    "display_name": "Demo (public TheLook e-commerce data)",
+    "data": {
+      "tables": {
+        "orders": "bigquery-public-data.thelook_ecommerce.orders",
+        "order_items": "bigquery-public-data.thelook_ecommerce.order_items",
+        "products": "bigquery-public-data.thelook_ecommerce.products",
+        "users": "bigquery-public-data.thelook_ecommerce.users"
+      },
+      "rules_profile": "thelook",
+      "bqml_dataset": "{project}.astrobot_ml",
+      "forecast": {
+        "table": "order_items",
+        "date_expression": "DATE(created_at)",
+        "value_expression": "SUM(sale_price)",
+        "where": "created_at IS NOT NULL",
+        "label": "revenue"
+      },
+      "segmentation": true
+    }
+  },
+  "clients": {
+    "npi": {
+      "display_name": "NPI",
+      "aliases": [
+        "npi",
+        "nassau paradise island"
+      ],
+      "data": {
+        "tables": {
+          "performance": "{project}.astrobot_npi.performance"
+        },
+        "rules_profile": "performance",
+        "bqml_dataset": "{project}.astrobot_ml_npi",
+        "forecast": {
+          "table": "performance",
+          "date_expression": "Date",
+          "value_expression": "SUM(Conversions)",
+          "label": "conversions"
+        },
+        "segmentation": false
+      },
+      "personas": [
+        "hnw",
+        "dink",
+        "legacy"
+      ],
+      "gmail": {
+        "query": "\"npi\" OR \"nassau paradise island\""
+      }
+    },
+    "venetian": {
+      "display_name": "The Venetian",
+      "aliases": [
+        "venetian",
+        "the venetian",
+        "venetian hotel"
+      ],
+      "data": {
+        "tables": {
+          "performance": "{project}.astrobot_venetian.performance"
+        },
+        "rules_profile": "performance",
+        "bqml_dataset": "{project}.astrobot_ml_venetian",
+        "forecast": {
+          "table": "performance",
+          "date_expression": "Date",
+          "value_expression": "SUM(Conversions)",
+          "label": "conversions"
+        },
+        "segmentation": false
+      },
+      "personas": [
+        "affluent",
+        "group",
+        "incentive",
+        "gourmet",
+        "creator",
+        "event",
+        "family",
+        "la_escapist",
+        "la_indulger"
+      ],
+      "gmail": {
+        "query": "\"venetian\""
+      }
+    },
+    "winndixie": {
+      "display_name": "Winn-Dixie",
+      "aliases": [
+        "winndixie",
+        "winn-dixie",
+        "winn dixie"
+      ],
+      "data": {
+        "tables": {
+          "performance": "{project}.astrobot_winndixie.performance"
+        },
+        "rules_profile": "performance",
+        "bqml_dataset": "{project}.astrobot_ml_winndixie",
+        "forecast": {
+          "table": "performance",
+          "date_expression": "Date",
+          "value_expression": "SUM(Conversions)",
+          "label": "conversions"
+        },
+        "segmentation": false
+      },
+      "personas": [
+        "mallory",
+        "maria",
+        "carol",
+        "amy"
+      ],
+      "gmail": {
+        "query": "\"winn-dixie\" OR \"winn dixie\" OR \"winndixie\""
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+# AstroBot CI/CD
+#   every push and pull request -> run all tests (unit + isolation ADK evals)
+#   push to main, tests green   -> deploy astrobot-web to Cloud Run
+#
+# GitHub signs in to Google Cloud with Workload Identity Federation (no JSON
+# key stored in GitHub). One-time setup: see docs/CI_CD.md.
+# Repository variables needed: GCP_WIF_PROVIDER, GCP_DEPLOY_SA
+
+name: ci-cd
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Unit tests and ADK isolation evals
+        env:
+          PYTHONPATH: src:.
+        run: uv run pytest -q
+
+  deploy:
+    needs: test
+    # Skipped (not failed) until the Workload Identity setup in docs/CI_CD.md is done.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+    runs-on: ubuntu-latest
+    concurrency: deploy-astrobot-web
+    permissions:
+      contents: read
+      id-token: write   # lets GitHub request a short-lived Google token
+    env:
+      PROJECT_ID: gemini-enterprise-79853434
+      REGION: us-central1
+      SERVICE: astrobot-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy to Cloud Run
+        # Env vars, secrets and the public/private setting are kept from the
+        # previous revision; CI only ships new code.
+        run: |
+          gcloud run deploy "$SERVICE" --source . \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --service-account "astrobot-web@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --quiet
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/health")" = "200"

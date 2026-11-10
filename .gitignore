@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+.venv/
+credentials.json
+token.json
+schedules.json
+# Local ADK state, databases, macOS clutter
+.adk/
+**/.adk/
+*.db
+*.sqlite
+.DS_Store
+__MACOSX/
+.pytest_cache/
+
+# Secrets: never commit (Gmail OAuth client/token, service-account keys, env files)
+credentials*.json
+token*.json
+client_secret*.json
+*-key.json
+*.pem
+*.key
+.env.*
+!.env.example

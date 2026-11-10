@@ -1,0 +1,1 @@
+"""AstroBot Project Manager specialist."""

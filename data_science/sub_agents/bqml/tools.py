@@ -1,0 +1,1083 @@
+"""
+Approved BigQuery ML tools for AstroBot.
+
+Design:
+    LLM
+      ->
+    Explicit BQML operation tool
+      ->
+    Approved SQL generator
+      ->
+    BigQuery
+
+The LLM never receives a generic arbitrary-SQL execution tool.
+
+Existing SQL generators are preserved for compatibility and for
+centralizing the approved BigQuery ML logic.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
+from typing import Any
+
+from dotenv import load_dotenv
+from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
+
+from google.adk.tools import ToolContext
+
+from tenancy import data_sources
+
+
+# ============================================================
+# ENVIRONMENT
+# ============================================================
+
+load_dotenv()
+
+
+# ============================================================
+# SOURCE DATA
+# ============================================================
+
+# Source tables and the BQML destination come from the active client's
+# data source (tenancy.data_sources). There is no shared default: a client
+# without a configured BQML dataset cannot train or query models.
+
+
+def _source() -> data_sources.DataSource:
+    return data_sources.current()
+
+
+def _bqml_dataset() -> str:
+    """Fully qualified BQML dataset (project.dataset) for the active client."""
+    dataset = _source().bqml_dataset
+    if not dataset or dataset.count(".") != 1:
+        raise RuntimeError("No BigQuery ML dataset is configured for this client.")
+    return dataset
+
+
+def _segmentation_source() -> str:
+    source = _source()
+    if not source.segmentation or "order_items" not in source.tables:
+        raise RuntimeError(
+            "Customer segmentation is not available for this client's data."
+        )
+    return source.tables["order_items"]
+
+
+# ============================================================
+# APPROVED MODEL NAMES
+# ============================================================
+
+REVENUE_MODEL_NAME = "revenue_forecast"
+CUSTOMER_SEGMENT_MODEL_NAME = "customer_segments"
+
+APPROVED_MODEL_NAMES = {
+    REVENUE_MODEL_NAME,
+    CUSTOMER_SEGMENT_MODEL_NAME,
+}
+
+
+# ============================================================
+# Google Cloud / BigQuery helpers
+# ============================================================
+
+def _get_project_id() -> str:
+    """
+    Return the configured GCP project ID.
+    """
+
+    project_id = os.getenv(
+        "GOOGLE_CLOUD_PROJECT",
+    )
+
+    if not project_id:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT is not configured."
+        )
+
+    return project_id
+
+
+def _get_client() -> bigquery.Client:
+    """
+    Create a BigQuery client using Application Default Credentials.
+    """
+
+    return bigquery.Client(
+        project=_get_project_id()
+    )
+
+
+def _get_model_path(
+    model_name: str,
+) -> str:
+    """
+    Return fully-qualified escaped BigQuery model path.
+
+    Only approved model names are allowed.
+    """
+
+    if model_name not in APPROVED_MODEL_NAMES:
+        raise ValueError(
+            f"Unsupported model name: {model_name}"
+        )
+
+    return (
+        f"`{_bqml_dataset()}."
+        f"{model_name}`"
+    )
+
+
+def _format_timestamp(
+    value: object,
+) -> str | None:
+    """
+    Format API timestamps into ISO-8601 UTC strings.
+    """
+
+    if value in (None, ""):
+        return None
+
+    if isinstance(
+        value,
+        datetime,
+    ):
+        if value.tzinfo is None:
+            value = value.replace(
+                tzinfo=timezone.utc
+            )
+        return value.astimezone(
+            timezone.utc
+        ).isoformat()
+
+    try:
+        timestamp_ms = int(value)
+
+        return datetime.fromtimestamp(
+            timestamp_ms / 1000,
+            tz=timezone.utc,
+        ).isoformat()
+
+    except (
+        TypeError,
+        ValueError,
+        OverflowError,
+    ):
+        return str(value)
+
+
+def _json_default(
+    value: object,
+) -> str:
+    """
+    JSON serializer for BigQuery result values.
+    """
+
+    if isinstance(
+        value,
+        datetime,
+    ):
+        return value.isoformat()
+
+    if isinstance(
+        value,
+        date,
+    ):
+        return value.isoformat()
+
+    if isinstance(
+        value,
+        time,
+    ):
+        return value.isoformat()
+
+    if isinstance(
+        value,
+        Decimal,
+    ):
+        return str(value)
+
+    return str(value)
+
+
+def _serialize_rows(
+    rows: Any,
+) -> list[dict[str, Any]]:
+    """
+    Convert BigQuery rows into plain dictionaries.
+    """
+
+    result: list[dict[str, Any]] = []
+
+    for row in rows:
+        if hasattr(
+            row,
+            "items",
+        ):
+            result.append(
+                dict(row.items())
+            )
+        else:
+            result.append(
+                dict(row)
+            )
+
+    return result
+
+
+def _execute_approved_sql(
+    sql: str,
+    operation: str,
+) -> dict[str, Any]:
+    """
+    Execute SQL generated by an approved internal operation.
+
+    This function is intentionally private.
+
+    The LLM cannot supply arbitrary SQL because the root agent
+    does not expose a generic SQL execution tool.
+    """
+
+    if not sql or not sql.strip():
+        raise ValueError(
+            "Approved SQL cannot be empty."
+        )
+
+    client = _get_client()
+
+    job = client.query(
+        sql,
+        location=os.getenv(
+            "BQML_LOCATION",
+            "US",
+        ),
+    )
+
+    rows = list(
+        job.result()
+    )
+
+    return {
+        "status": "success",
+        "operation": operation,
+        "job_id": job.job_id,
+        "rows_returned": len(rows),
+        "rows": _serialize_rows(rows),
+    }
+
+
+# ============================================================
+# Dataset helpers
+# ============================================================
+
+def get_bqml_dataset() -> str:
+    """Return the configured BQML destination dataset."""
+
+    return _bqml_dataset()
+
+
+def check_bqml_dataset() -> str:
+    """Verify that the destination dataset exists."""
+
+    client = _get_client()
+
+    dataset_id = (
+        f"{_bqml_dataset()}"
+    )
+
+    try:
+        dataset = client.get_dataset(
+            dataset_id
+        )
+
+        return (
+            "BQML dataset exists: "
+            f"{dataset.full_dataset_id} "
+            f"(location={dataset.location})"
+        )
+
+    except Exception as exc:
+        return (
+            "BQML dataset check failed: "
+            f"{exc}"
+        )
+
+
+# ============================================================
+# Revenue forecasting SQL generators
+# ============================================================
+
+def get_revenue_training_sql() -> str:
+    """
+    Return approved forecasting training SQL for the active client.
+    """
+    model_path = _get_model_path(REVENUE_MODEL_NAME)
+    return f"""
+CREATE OR REPLACE MODEL {model_path}
+OPTIONS(
+    MODEL_TYPE = 'ARIMA_PLUS',
+    TIME_SERIES_TIMESTAMP_COL = 'order_date',
+    TIME_SERIES_DATA_COL = 'revenue',
+    DATA_FREQUENCY = 'DAILY',
+    AUTO_ARIMA = TRUE,
+    CLEAN_SPIKES_AND_DIPS = TRUE,
+    DECOMPOSE_TIME_SERIES = TRUE
+)
+AS
+{get_revenue_training_data_sql().strip()};
+"""
+
+def get_revenue_training_data_sql() -> str:
+    """
+    Return only the SELECT used to build the daily forecasting series
+    for the active client (columns: order_date, revenue).
+    """
+    f = _source().forecast
+    if f is None:
+        raise RuntimeError("Forecasting is not configured for this client.")
+    where = f"WHERE {f.where} AND " if f.where else "WHERE "
+    return f"""
+SELECT
+    {f.date_expression} AS order_date,
+    {f.value_expression} AS revenue
+FROM
+    `{f.table}`
+{where}{f.date_expression} <= CURRENT_DATE()
+GROUP BY
+    order_date
+ORDER BY
+    order_date
+"""
+
+def get_revenue_forecast_sql(
+    days: int = 30,
+) -> str:
+    """
+    Return approved revenue forecast SQL.
+    """
+
+    if not isinstance(
+        days,
+        int,
+    ):
+        raise ValueError(
+            "Forecast horizon must be an integer."
+        )
+
+    if days < 1 or days > 365:
+        raise ValueError(
+            "Forecast horizon must be between 1 and 365 days."
+        )
+
+    model_path = _get_model_path(
+        REVENUE_MODEL_NAME
+    )
+
+    return f"""
+SELECT
+    forecast_timestamp,
+    forecast_value,
+    prediction_interval_lower_bound,
+    prediction_interval_upper_bound
+FROM ML.FORECAST(
+    MODEL {model_path},
+    STRUCT(
+        {days} AS horizon,
+        0.90 AS confidence_level
+    )
+)
+ORDER BY
+    forecast_timestamp;
+"""
+
+
+def get_revenue_model_evaluation_sql() -> str:
+    """
+    Return approved revenue model evaluation SQL.
+    """
+
+    model_path = _get_model_path(
+        REVENUE_MODEL_NAME
+    )
+
+    return f"""
+SELECT
+    *
+FROM ML.ARIMA_EVALUATE(
+    MODEL {model_path}
+);
+"""
+
+
+def get_revenue_explain_forecast_sql(
+    days: int = 30,
+) -> str:
+    """
+    Return approved explainable revenue forecast SQL.
+    """
+
+    if not isinstance(
+        days,
+        int,
+    ):
+        raise ValueError(
+            "Forecast horizon must be an integer."
+        )
+
+    if days < 1 or days > 365:
+        raise ValueError(
+            "Forecast horizon must be between 1 and 365 days."
+        )
+
+    model_path = _get_model_path(
+        REVENUE_MODEL_NAME
+    )
+
+    return f"""
+SELECT
+    *
+FROM ML.EXPLAIN_FORECAST(
+    MODEL {model_path},
+    STRUCT(
+        {days} AS horizon,
+        0.90 AS confidence_level
+    )
+)
+WHERE
+    time_series_type = 'forecast'
+ORDER BY
+    time_series_timestamp;
+"""
+
+
+# ============================================================
+# Customer segmentation SQL generators
+# ============================================================
+
+def get_customer_segmentation_training_sql(
+    max_customers: int = 50000,
+) -> str:
+    """
+    Return approved customer segmentation training SQL.
+    """
+
+    if not isinstance(
+        max_customers,
+        int,
+    ):
+        raise ValueError(
+            "max_customers must be an integer."
+        )
+
+    if max_customers < 100:
+        raise ValueError(
+            "max_customers must be at least 100."
+        )
+
+    if max_customers > 100000:
+        raise ValueError(
+            "max_customers cannot exceed 100000."
+        )
+
+    model_path = _get_model_path(
+        CUSTOMER_SEGMENT_MODEL_NAME
+    )
+
+    return f"""
+CREATE OR REPLACE MODEL {model_path}
+OPTIONS(
+    MODEL_TYPE = 'KMEANS',
+    NUM_CLUSTERS = 4,
+    STANDARDIZE_FEATURES = TRUE
+)
+AS
+SELECT
+    user_id,
+    COUNT(DISTINCT order_id) AS order_count,
+    SUM(sale_price) AS total_spend,
+    AVG(sale_price) AS average_item_value
+FROM
+    `{_segmentation_source()}`
+WHERE
+    user_id IS NOT NULL
+GROUP BY
+    user_id
+LIMIT {max_customers};
+"""
+
+
+def get_customer_segmentation_prediction_sql() -> str:
+    """
+    Return approved customer-level segmentation prediction SQL.
+    """
+
+    model_path = _get_model_path(
+        CUSTOMER_SEGMENT_MODEL_NAME
+    )
+
+    return f"""
+SELECT
+    *
+FROM ML.PREDICT(
+    MODEL {model_path},
+    (
+        SELECT
+            user_id,
+            COUNT(DISTINCT order_id) AS order_count,
+            SUM(sale_price) AS total_spend,
+            AVG(sale_price) AS average_item_value
+        FROM
+            `{_segmentation_source()}`
+        WHERE
+            user_id IS NOT NULL
+        GROUP BY
+            user_id
+    )
+)
+LIMIT 100;
+"""
+
+
+def get_customer_segmentation_distribution_sql() -> str:
+    """
+    Return approved aggregate customer-segment distribution SQL.
+    """
+
+    model_path = _get_model_path(
+        CUSTOMER_SEGMENT_MODEL_NAME
+    )
+
+    return f"""
+WITH predictions AS (
+    SELECT
+        CENTROID_ID
+    FROM ML.PREDICT(
+        MODEL {model_path},
+        (
+            SELECT
+                user_id,
+                COUNT(DISTINCT order_id) AS order_count,
+                SUM(sale_price) AS total_spend,
+                AVG(sale_price) AS average_item_value
+            FROM
+                `{_segmentation_source()}`
+            WHERE
+                user_id IS NOT NULL
+            GROUP BY
+                user_id
+        )
+    )
+)
+
+SELECT
+    CENTROID_ID,
+    COUNT(*) AS customer_count
+FROM
+    predictions
+GROUP BY
+    CENTROID_ID
+ORDER BY
+    CENTROID_ID;
+"""
+
+
+# ============================================================
+# Model metadata
+# ============================================================
+
+def get_model_status_sql(
+    model_name: str = REVENUE_MODEL_NAME,
+) -> str:
+    """
+    Compatibility helper retained for existing imports.
+
+    The actual model-status workflow uses the Python BigQuery
+    client in get_model_status().
+    """
+
+    if model_name not in APPROVED_MODEL_NAMES:
+        raise ValueError(
+            f"Unsupported model name: {model_name}"
+        )
+
+    return (
+        f"MODEL STATUS: "
+        f"{_bqml_dataset()}."
+        f"{model_name}"
+    )
+
+
+def get_model_status(
+    model_name: str = REVENUE_MODEL_NAME,
+) -> str:
+    """
+    Return factual metadata for an approved BQML model.
+    """
+
+    if model_name not in APPROVED_MODEL_NAMES:
+        raise ValueError(
+            f"Unsupported model name: {model_name}"
+        )
+
+    project_id = _bqml_dataset().split(".")[0]
+
+    model_path = (
+        f"{_bqml_dataset()}."
+        f"{model_name}"
+    )
+
+    client = _get_client()
+
+    try:
+        model = client.get_model(
+            model_path
+        )
+
+    except NotFound:
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "model_path": model_path,
+                "project_id": project_id,
+                "dataset_id": _bqml_dataset().split(".")[1],
+                "model_id": model_name,
+                "message": (
+                    "The approved BigQuery ML model "
+                    "does not exist."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+    except Exception as exc:
+        return json.dumps(
+            {
+                "status": "ERROR",
+                "model_path": model_path,
+                "project_id": project_id,
+                "dataset_id": _bqml_dataset().split(".")[1],
+                "model_id": model_name,
+                "message": str(exc),
+            },
+            ensure_ascii=False,
+        )
+
+    properties = getattr(
+        model,
+        "_properties",
+        {},
+    ) or {}
+
+    model_reference = (
+        properties.get(
+            "modelReference",
+            {},
+        )
+        or {}
+    )
+
+    training_runs = (
+        properties.get(
+            "trainingRuns",
+            [],
+        )
+        or []
+    )
+
+    status: dict[str, Any] = {
+        "status": "EXISTS",
+        "model_path": model_path,
+        "project_id": model_reference.get(
+            "projectId",
+            project_id,
+        ),
+        "dataset_id": model_reference.get(
+            "datasetId",
+            _bqml_dataset().split(".")[1],
+        ),
+        "model_id": model_reference.get(
+            "modelId",
+            model_name,
+        ),
+        "model_type": properties.get(
+            "modelType"
+        ),
+        "location": properties.get(
+            "location",
+            getattr(
+                model,
+                "location",
+                None,
+            ),
+        ),
+        "creation_time": _format_timestamp(
+            properties.get(
+                "creationTime"
+            )
+        ),
+        "last_modified_time": _format_timestamp(
+            properties.get(
+                "lastModifiedTime"
+            )
+        ),
+        "training_run_count": len(
+            training_runs
+        ),
+    }
+
+    if training_runs:
+        latest_training_run = (
+            training_runs[-1]
+        )
+
+        status[
+            "latest_training_start_time"
+        ] = latest_training_run.get(
+            "startTime"
+        )
+
+        training_options = (
+            latest_training_run.get(
+                "trainingOptions"
+            )
+            or {}
+        )
+
+        if training_options:
+            status[
+                "training_options"
+            ] = {
+                "model_type": training_options.get(
+                    "modelType"
+                ),
+                "data_frequency": training_options.get(
+                    "dataFrequency"
+                ),
+                "time_series_timestamp_column": (
+                    training_options.get(
+                        "timeSeriesTimestampColumn"
+                    )
+                ),
+                "time_series_data_column": (
+                    training_options.get(
+                        "timeSeriesDataColumn"
+                    )
+                ),
+                "horizon": training_options.get(
+                    "horizon"
+                ),
+                "auto_arima": training_options.get(
+                    "autoArima"
+                ),
+            }
+
+    return json.dumps(
+        status,
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+# ============================================================
+# Internal model existence helper
+# ============================================================
+
+def _model_exists(
+    model_name: str,
+) -> bool:
+    """
+    Return whether an approved model exists.
+    """
+
+    if model_name not in APPROVED_MODEL_NAMES:
+        raise ValueError(
+            f"Unsupported model name: {model_name}"
+        )
+
+    client = _get_client()
+
+    model_path = (
+        f"{_bqml_dataset()}."
+        f"{model_name}"
+    )
+
+    try:
+        client.get_model(
+            model_path
+        )
+        return True
+
+    except NotFound:
+        return False
+
+
+# ============================================================
+# Training approval
+# ============================================================
+
+_TRAIN_INTENT = re.compile(
+    r"\b(re-?train\w*"
+    r"|train(?:ing)?\s+(?:a\s+|an\s+|the\s+|new\s+)?(?:\w+\s+){0,2}models?"
+    r"|(?:create|build|rebuild)\s+(?:a\s+|an\s+|the\s+|new\s+)?(?:\w+\s+){0,2}models?)\b",
+    re.IGNORECASE,
+)
+_REPLACE_INTENT = re.compile(r"\b(re-?train\w*|rebuild|replace|overwrite)\b", re.IGNORECASE)
+
+
+def training_requested(user_text: str) -> bool:
+    """True only when the user's own message explicitly asks to train a model."""
+    return bool(_TRAIN_INTENT.search(str(user_text or "")))
+
+
+def replacement_requested(user_text: str) -> bool:
+    """True only when the user's own message asks to retrain/replace a model."""
+    return bool(_REPLACE_INTENT.search(str(user_text or "")))
+
+
+def _training_refusal(user_text: str, model_name: str) -> str | None:
+    """Server-side approval for model writes. None means allowed."""
+    if not training_requested(user_text):
+        return json.dumps({
+            "status": "NOT_APPROVED",
+            "model": model_name,
+            "message": "Model training was not explicitly requested by the user.",
+        })
+    if _model_exists(model_name) and not replacement_requested(user_text):
+        return json.dumps({
+            "status": "EXISTS",
+            "model": model_name,
+            "message": (
+                "The model already exists and was preserved. "
+                "Ask to retrain or rebuild it to replace it."
+            ),
+        })
+    return None
+
+
+# ============================================================
+# Explicit execution tools
+# ============================================================
+
+def train_revenue_model(
+    tool_context: ToolContext,
+) -> str:
+    """
+    Train (or retrain) the approved forecasting model for the active client.
+
+    Runs only when the user's own message explicitly asked for training.
+    """
+    user_text = tool_context.state.get("_current_user_request", "")
+    refusal = _training_refusal(user_text, REVENUE_MODEL_NAME)
+    if refusal:
+        return refusal
+    return json.dumps(
+        _execute_approved_sql(get_revenue_training_sql(), "train_revenue_model"),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def run_revenue_forecast(
+    days: int = 30,
+) -> str:
+    """
+    Generate an approved revenue forecast.
+    """
+
+    if not _model_exists(
+        REVENUE_MODEL_NAME
+    ):
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "operation": "run_revenue_forecast",
+                "model": REVENUE_MODEL_NAME,
+                "message": (
+                    "Revenue model does not exist. "
+                    "Explicitly train the model first."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return json.dumps(
+        _execute_approved_sql(
+            get_revenue_forecast_sql(
+                days
+            ),
+            "run_revenue_forecast",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def evaluate_revenue_model() -> str:
+    """
+    Evaluate the approved revenue forecasting model.
+    """
+
+    if not _model_exists(
+        REVENUE_MODEL_NAME
+    ):
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "operation": "evaluate_revenue_model",
+                "model": REVENUE_MODEL_NAME,
+                "message": (
+                    "Revenue model does not exist."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return json.dumps(
+        _execute_approved_sql(
+            get_revenue_model_evaluation_sql(),
+            "evaluate_revenue_model",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def explain_revenue_forecast(
+    days: int = 30,
+) -> str:
+    """
+    Generate an explainable revenue forecast.
+    """
+
+    if not _model_exists(
+        REVENUE_MODEL_NAME
+    ):
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "operation": "explain_revenue_forecast",
+                "model": REVENUE_MODEL_NAME,
+                "message": (
+                    "Revenue model does not exist."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return json.dumps(
+        _execute_approved_sql(
+            get_revenue_explain_forecast_sql(
+                days
+            ),
+            "explain_revenue_forecast",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def train_customer_segmentation_model(
+    tool_context: ToolContext,
+    max_customers: int = 50000,
+) -> str:
+    """
+    Train (or retrain) the approved customer segmentation model.
+
+    Runs only when the user's own message explicitly asked for training.
+    """
+    user_text = tool_context.state.get("_current_user_request", "")
+    refusal = _training_refusal(user_text, CUSTOMER_SEGMENT_MODEL_NAME)
+    if refusal:
+        return refusal
+    return json.dumps(
+        _execute_approved_sql(
+            get_customer_segmentation_training_sql(max_customers),
+            "train_customer_segmentation_model",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def get_customer_segmentation_predictions() -> str:
+    """
+    Return approved customer-level prediction records.
+    """
+
+    if not _model_exists(
+        CUSTOMER_SEGMENT_MODEL_NAME
+    ):
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "operation": (
+                    "get_customer_segmentation_predictions"
+                ),
+                "model": CUSTOMER_SEGMENT_MODEL_NAME,
+                "message": (
+                    "Customer segmentation model does not exist."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return json.dumps(
+        _execute_approved_sql(
+            get_customer_segmentation_prediction_sql(),
+            "get_customer_segmentation_predictions",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )
+
+
+def get_customer_segmentation_distribution() -> str:
+    """
+    Return authoritative aggregate customer counts by segment.
+    """
+
+    if not _model_exists(
+        CUSTOMER_SEGMENT_MODEL_NAME
+    ):
+        return json.dumps(
+            {
+                "status": "NOT_FOUND",
+                "operation": (
+                    "get_customer_segmentation_distribution"
+                ),
+                "model": CUSTOMER_SEGMENT_MODEL_NAME,
+                "message": (
+                    "Customer segmentation model does not exist."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    return json.dumps(
+        _execute_approved_sql(
+            get_customer_segmentation_distribution_sql(),
+            "get_customer_segmentation_distribution",
+        ),
+        ensure_ascii=False,
+        indent=2,
+        default=_json_default,
+    )

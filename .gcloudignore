@@ -1,0 +1,65 @@
+# ============================================================
+# AstroBot Cloud Run source boundary
+# Development-only files must never enter a deployment archive.
+# ============================================================
+
+# Git
+.git/
+.gitignore
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# ADK local runtime state
+.adk/
+**/.adk/
+
+# Local databases / runtime state
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Local schedule persistence
+schedules.json
+
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+
+credentials.json
+token.json
+*.pem
+*.key
+*.p12
+
+# Local artifacts / generated files
+artifacts/
+**/artifacts/
+*.png
+*.jpg
+*.jpeg
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/

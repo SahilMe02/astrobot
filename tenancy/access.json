@@ -1,0 +1,26 @@
+{
+  "_comment": "Who may access which client. Keys are verified user IDs: the signed-in Google email in production (IAP), or ASTROBOT_DEV_USER ('user') in local dev mode. Anyone not listed has no access. An empty list means no clients, never all clients.",
+  "users": {
+    "user": [
+      "npi",
+      "venetian",
+      "winndixie"
+    ],
+    "astrobot.test012@gmail.com": [
+      "npi",
+      "venetian",
+      "winndixie"
+    ],
+    "sahilpmehta02@gmail.com": [
+      "npi",
+      "venetian",
+      "winndixie"
+    ]
+  },
+  "_guests_comment": "Clients that anonymous visitors may use when the app runs with ASTROBOT_AUTH_MODE=public (public demo link). Ignored in every other mode.",
+  "guests": [
+    "npi",
+    "venetian",
+    "winndixie"
+  ]
+}
