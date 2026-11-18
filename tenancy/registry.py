@@ -71,6 +71,16 @@ def is_client(client_id: str) -> bool:
     return str(client_id or "").strip().lower() in clients()
 
 
+def resolve(name: str) -> str:
+    """Client id for an id, alias or display name ("Winn-Dixie" -> "winndixie"); "" if unknown."""
+    key = " ".join(str(name or "").strip().lower().split())
+    for cid, cfg in clients().items():
+        names = {cid, str(cfg.get("display_name", "")).lower(), *[str(a).lower() for a in cfg.get("aliases", [])]}
+        if key in names:
+            return cid
+    return ""
+
+
 def display_name(client_id: str) -> str:
     return clients().get(client_id, {}).get("display_name", client_id)
 

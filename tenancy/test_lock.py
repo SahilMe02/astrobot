@@ -93,3 +93,23 @@ def test_missing_registry_fails_closed(monkeypatch, tmp_path):
     registry.reload()
     assert registry.clients() == {}
     assert lock.decide("[Client: npi] revenue", "", "analyst").blocked
+
+
+
+@pytest.mark.parametrize("tag, client", [
+    ("The Venetian", "venetian"), ("the  venetian", "venetian"), ("VENETIAN", "venetian"), ("NPI", "npi"),
+])
+def test_client_tag_accepts_display_names_and_aliases(tag, client):
+    decision = lock.decide(f"[Client: {tag}] Show spend by channel", "", "analyst")
+    assert not decision.blocked and decision.client_id == client and decision.newly_locked
+
+
+def test_hyphenated_display_name_is_recognised_then_access_checked():
+    # "Winn-Dixie" is a known client (no longer "not recognised"); analyst has no access to it.
+    decision = lock.decide("[Client: Winn-Dixie] Show spend", "", "analyst")
+    assert decision.block_message == "You do not have access to Winn-Dixie."
+
+
+def test_alias_tag_still_respects_existing_lock():
+    decision = lock.decide("[Client: The Venetian] Show spend", "npi", "analyst")
+    assert decision.blocked and "locked to NPI" in decision.block_message

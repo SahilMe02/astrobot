@@ -38,14 +38,15 @@ def decide(text: str, current_lock: str, user_id: str) -> LockDecision:
     lock = str(current_lock or "").strip().lower()
 
     markers = explicit_markers(text)
-    unknown = [m for m in markers if not registry.is_client(m)]
+    resolved = {m: registry.resolve(m) for m in markers}
+    unknown = [m for m, cid in resolved.items() if not cid]
     if unknown:
         return LockDecision(block_message=(
             f"'{unknown[0]}' is not a recognised client. "
             "Please check the client name."
         ))
 
-    mentioned = registry.mentioned_clients(text) | set(markers)
+    mentioned = registry.mentioned_clients(text) | set(resolved.values())
 
     if lock:
         if not registry.has_access(user_id, lock):
