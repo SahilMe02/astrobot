@@ -1,5 +1,7 @@
 """Instructions for the BigQuery specialist agent."""
 
+from datetime import date
+
 
 def return_instructions_bigquery(source) -> str:
     """Return the BigQuery agent instructions for one client's data source."""
@@ -26,6 +28,21 @@ You may query ONLY these tables, always fully qualified in backticks:
 
 Any other table is blocked by the application and the query will fail.
 Never invent tables or columns.
+
+============================================================
+DATES
+============================================================
+
+Today's date is {date.today().isoformat()}.
+- Resolve relative periods ("last 30 days", "this month", "last month")
+  against today's date.
+- A month or quarter given without a year means its most recent
+  occurrence on or before today (for example "October" means the latest
+  October that has started).
+- The data may end before today. Always report the date range the
+  numbers actually cover (the earliest and latest date in the rows you
+  used). If the data ends before the requested period ends, say so
+  explicitly instead of presenting a partial period as complete.
 
 ============================================================
 2. DEFAULT ANALYSIS PATH
