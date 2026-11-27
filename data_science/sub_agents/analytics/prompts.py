@@ -354,7 +354,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time as _t
 
-fig, ax = plt.subplots(figsize=(12, 7))
+fig, ax = plt.subplots(figsize=(7, 4))
 
 Create the requested visualization using the actual supplied data.
 
@@ -372,7 +372,7 @@ MANDATORY END PATTERN:
 _fname = "chart_" + str(int(_t.time())) + ".png"
 
 plt.tight_layout()
-plt.savefig(_fname, dpi=120, bbox_inches="tight")
+plt.savefig(_fname, dpi=100, bbox_inches="tight")
 plt.show()
 plt.close()
 

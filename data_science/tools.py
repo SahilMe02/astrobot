@@ -716,7 +716,7 @@ def _render_multi_metric_bar(spec: dict[str, Any]) -> bytes:
     categories = spec["data"]["categories"]
     series = spec["data"]["series"]
     fig, axes = plt.subplots(
-        1, len(series), figsize=(7 * len(series), 7), squeeze=False
+        1, len(series), figsize=(4 * len(series), 4), squeeze=False
     )
     for ax, (name, values) in zip(axes[0], series.items()):
         bars = ax.bar(categories, [float(v) for v in values])
@@ -726,7 +726,7 @@ def _render_multi_metric_bar(spec: dict[str, Any]) -> bytes:
     fig.suptitle(spec.get("title", "Analytics Chart"))
     fig.tight_layout()
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
+    fig.savefig(buffer, format="png", dpi=100)
     plt.close(fig)
     return buffer.getvalue()
 
@@ -774,7 +774,7 @@ def _render_chart_to_bytes(
         return _render_multi_metric_bar(spec)
 
     fig, ax = plt.subplots(
-        figsize=(12, 7)
+        figsize=(7, 4)
     )
 
     # --------------------------------------------------------
@@ -1249,7 +1249,7 @@ def _render_chart_to_bytes(
     fig.savefig(
         buffer,
         format="png",
-        dpi=120,
+        dpi=100,
         bbox_inches="tight",
     )
 
